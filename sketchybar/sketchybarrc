@@ -1,0 +1,187 @@
+#!/usr/bin/env bash
+
+PLUGIN_DIR="$CONFIG_DIR/plugins"
+source "$PLUGIN_DIR"/aura_dark_colors.sh
+##### Bar Appearance #####
+# Configuring the general appearance of the bar.
+# Color of the bar is ALMOST transparent.
+# That is intentional, as my goal is to have a transparent bar.
+# SketchyBar uses the argb hex color format, however, if I set opacity in the color code to 0
+# the bar looses interactivity - clicking events "pass though" it and do not work
+# if you do not set color, default color will be used (can be found in the documentation)
+
+sketchybar --bar position=top height=40 blur_radius=30 color="$BAR_BG" margin=2
+
+##### Changing Defaults #####
+# We now change some default values, which are applied to all further items.
+# For a full list of all available item properties see:
+# https://felixkratz.github.io/SketchyBar/config/items
+
+default=(
+  padding_left=5
+  padding_right=5
+  icon.font="JetBrainsMono Nerd Font:ExtraBold:15.0"
+  label.font="JetBrainsMono Nerd Font:Bold:15.0"
+  label.color="$AURA_WHITE"
+)
+sketchybar --default "${default[@]}"
+
+##### Adding Mission Control Space Indicators #####
+# I do not use native MacOS Virtual Desktops, becuase my window manager is AeroSpace
+# Aerospace creates its own virtual workspaces that technically live on one native virtual desktop
+# This is because MacOS is not happy when some app/program tries to take control over Mission control,
+# Manage Desktops ecc. As for my knowledge, Yabai WM manages directly native virtual Desktops,
+# However, it requires elevated provileges.
+#
+
+############# Oragnization of my bar ###############
+
+#    apple logo       AeroSpace workspaces with icons open apps     NOTCH     CPU/GPU Temp Graph     battery
+#  non-interactive        click to "teleport" to a workspace        NOTCH       non-interactive     non-interactive
+
+##### Adding Left Items #####
+# The most left element is just an apple logo, non-interactive.
+# I have screen 13" so I do not have much space for many elements,
+# plus, on hover the native Control Center pops up, with bunch of functionality attached to logo there
+
+sketchybar --add item apple left --set apple \
+  icon.font="JetBrainsMono Nerd Font:ExtraBold:28.0" \
+  padding_left=0 \
+  icon.y_offset=1 \
+  icon.shadow.drawing=on \
+  icon.shadow.color="$AURA_ORANGE" \
+  icon.shadow.distance=2 \
+  icon.color="$DARK_RED" \
+  icon="" \
+  icon.drawing=on
+
+# The second left element will be exactly the element that displays AeroSpace workspace that are "in use"
+space=(
+  background.corner_radius=9
+  background.border_width=2
+  background.height=33
+  background.color="$DARK_PURPLE_BG"
+  background.drawing=on
+  background.shadow.drawing=on
+  background.shadow.angle=90
+  icon.padding_left=20
+  label.padding_right=20
+  icon.y_offset=1
+  icon.padding_right=5
+  label.font="sketchybar-app-font:Regular:15.0"
+  drawing=off
+  label.color="$AURA_ORANGE"
+)
+#defining custom event which is triggered by AeroSpace (aerospace.toml, exec-on-workspace-change)
+sketchybar --add event aerospace_workspace_change
+#this is about setting barebones of wokspaces dynamic items and attaching the script that draws NON-EMPTY workspaces,
+#and adds functionality on click to navigate between already active workspaces by mouse
+# note, initially, nothing is drawn - drawing=off in space styles element above
+for sid in $(aerospace list-workspaces --all); do
+  sketchybar --add item space.$sid left \
+             --subscribe space.$sid aerospace_workspace_change \
+             --set space.$sid "${space[@]}" \
+                   icon="$sid" \
+                   click_script="aerospace workspace $sid" \
+                   script="$CONFIG_DIR/plugins/aerospace.sh $sid"
+  #getting the list of active workspaces - workspaces, that have at least one app window and matching an app icon for this window
+  apps=$(aerospace list-windows --format %{app-name} --workspace "$sid" | sort -u)
+  icon_strip=""
+  if [ "${apps}" != "" ]; then
+    while read -r app; do
+      icon_strip+=" $($CONFIG_DIR/plugins/icon_map.sh "$app")"
+    done <<<"${apps}"
+    #setting icon and changing drawing to "on" for non-empty workspaces
+    sketchybar --animate tahn 10 --set space.$sid drawing=on label="$icon_strip"
+  fi
+done
+
+# adding a “functional” item - it won’t be displayed, but it subscribes to the custom aerospace_workspace_change event and
+# to the one of default ssketchybar events - space_windows_change
+# Aerospace keeps all windows on the same MacOS virtualdesktop, but opening or closing any app window 
+# in any aerospace workspace still triggers the default space_window_change event and reruns
+# the plugin script space_windows.sh
+
+sketchybar --add item space_windows left \
+           --set space_windows \
+                 script="$PLUGIN_DIR/space_windows.sh" \
+           --subscribe space_windows aerospace_workspace_change space_windows_change
+
+#I do not find any of use for displaying "front app" of focused app becuase I use Junky Borders to add a border for
+#focused app window
+
+# sketchybar --add item chevron left\
+#            --set chevron label.drawing=off \
+#            --add item front_app center \
+#            --set front_app icon.drawing=off script="$PLUGIN_DIR/front_app.sh" \
+#            --subscribe front_app front_app_switched
+
+##### Adding Right Items #####
+
+atomic_metircs=(
+  icon.padding_right=6 
+  icon.color="$AURA_ORANGE"
+)
+
+sketchybar --add item clock right \
+           --set clock "${atomic_metircs[@]}" \
+                 update_freq=10 \
+                 icon=󰖉 \
+                 padding_left=15 \
+                 script="$PLUGIN_DIR/clock.sh" \
+           --add item battery right \
+           --set battery "${atomic_metircs[@]}" \
+                 update_freq=120 \
+                 padding_left=40 \
+                 script="$PLUGIN_DIR/battery.sh" \
+           --subscribe battery system_woke power_source_change \
+           --add item ram right \
+           --set ram "${atomic_metircs[@]}" \
+                 update_freq=1 \
+                 icon= \
+                 label.width=27 \
+                 padding_left=10 \
+                 script="$PLUGIN_DIR/ram.sh" \
+           --add item cpu right \
+           --set cpu "${atomic_metircs[@]}" \
+                 update_freq=1 \
+                 icon= \
+                 label.width=27 \
+                 padding_left=40 \
+                 script="$PLUGIN_DIR/cpu.sh" \
+
+### THIS MODULE IS COMMENTED BECAUSE IT WILL NOT WORK WITHOUT RUST ALGORITHM THAT GETS TEMPERATURE METRICS#####
+
+# graph_temps=(
+#   graph.line_width=2 
+#   label.font="JetBrainsMono Nerd Font:Bold:12.0" 
+#   label.width=30 
+#   y_offset=1
+#   icon.padding_right=3
+#   label.padding_left=4
+# )     
+# # the width of one graph is set to 0, so the two temperature lines are plotted on the same graph
+# sketchybar --add graph temp.cpu right 100 \
+#            --set temp.cpu "${graph_temps[@]}" \
+#                  width=0 \
+#                  graph.color="$AURA_GREEN" \
+#                  graph.fill_color="$AURA_GREEN_TRNSPNT" \
+#                  label="cpu" \
+#                  icon= \
+#                  icon.font="JetBrainsMono Nerd Font:Bold:12.0" \
+#                  label.y_offset=7 \
+#                  icon.y_offset=6 \
+#                  icon.color="$AURA_GREEN" \
+#                  label.color="$AURA_GREEN" \
+#            --add graph temp.gpu right 100 \
+#            --set temp.gpu "${graph_temps[@]}" \
+#                  graph.color="$AURA_PINK" \
+#                  label="gpu" \
+#                  icon=󰢮 \
+#                  icon.color="$AURA_PINK" \
+#                  label.color="$AURA_PINK" \
+#                  icon.y_offset=-14 \
+#                  label.y_offset=-12 
+
+##### Force all scripts to run the first time (never do this in a script) #####
+sketchybar --update

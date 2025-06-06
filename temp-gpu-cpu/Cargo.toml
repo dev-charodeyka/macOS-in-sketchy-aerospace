@@ -1,0 +1,7 @@
+[package]
+name = "temp-gpu-cpu"
+version = "0.0.1"
+edition = "2024"
+
+[dependencies]
+core-foundation = "0.10.1"
